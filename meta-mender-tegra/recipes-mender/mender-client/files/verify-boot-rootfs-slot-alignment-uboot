@@ -1,0 +1,56 @@
+#!/bin/sh
+
+echo "Verify if nvbootctrl slot matches rootfs partition"
+
+# This variable will be populated with the partition number to boot from
+mender_boot_partition=`fw_printenv -n mender_boot_part`
+devnam=`grep -h "RootfsPart" /etc/mender/mender.conf /var/lib/mender/mender.conf | grep ${mender_boot_partition} | tr -d '" ' | sed "s/RootfsPart//" | cut -f1 -d":"`
+
+# Fetching corresponding boot slot
+if [ $devnam = A ]; then
+    mender_boot_slot=0
+elif [ $devnam = B ]; then
+    mender_boot_slot=1
+fi
+
+# Have default value here in case priorities are equal
+nvbootctrl_slot=`nvbootctrl get-current-slot`
+priority_slot0=`nvbootctrl dump-slots-info | grep 'priority' | awk 'FNR == 1 {print $4}' | cut -d ',' -f 1`
+priority_slot1=`nvbootctrl dump-slots-info | grep 'priority' | awk 'FNR == 2 {print $4}' | cut -d ',' -f 1`
+
+# Determining the boot slot that would be used after reboot
+# Whichever boot slot would have the higher priority, that would be used in the next boot.
+if [ $priority_slot1 -gt $priority_slot0 ]; then
+    nvbootctrl_slot=1
+elif [ $priority_slot0 -gt $priority_slot1 ]; then
+    nvbootctrl_slot=0
+fi
+
+# Checking if the mender and nvbootctrl align to the same boot slots
+# if not set nvbootctrl active boot slot sane as mender_boot_slot
+# Dumping Warning prints to stderr since mender state scripts logs only read stderr.
+if [ $mender_boot_slot -ne $nvbootctrl_slot ]; then
+    echo "********************* WARNING!!!!! *********************"
+    echo "Partition mismatch for boot and rootfs on reboot"
+    echo "mender boot slot: ${mender_boot_slot}"
+    echo "nvbootctrl slot: ${nvbootctrl_slot}"
+    echo "Setting the current nvbootctrl slot manually to the value of mender boot slot"
+    nvbootctrl set-active-boot-slot ${mender_boot_slot}
+
+    echo "********************* WARNING!!!!! *********************"
+    echo "Dumping partition information"
+    echo `nvbootctrl get-current-slot`
+    echo `nvbootctrl dump-slots-info`
+    echo `fw_printenv -n mender_boot_part`
+
+    echo "********************* WARNING!!!!! *********************"
+    echo "Disabling mender-client systemd service to prevent any more updates"
+    systemctl stop mender-client
+
+    echo "Reboot the device to set the active slot before proceeding for a mender -install or mender -commit"
+    exit 1
+else
+    echo "Verified"
+fi
+
+exit 0

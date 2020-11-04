@@ -1,0 +1,19 @@
+#!/bin/sh
+
+echo "Starting mender wrapper"
+
+echo $@ | grep 'install\|-install' > /dev/null
+if [ $? -eq 0 ]; then
+    /etc/mender/verify-boot-rootfs-slot-alignment-uboot || exit 1
+fi
+
+mender_override $@
+
+rc=$?
+if [ $rc -eq 0 ]; then
+    echo $@ | grep 'install\|-install' > /dev/null
+    if [ $? -eq 0 ]; then
+        touch /var/lib/mender/mender-install-success
+    fi
+fi
+
