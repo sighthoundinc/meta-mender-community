@@ -10,6 +10,11 @@ if [ $? -eq 0 ]; then
     # Exit with failure and error message if we don't have alignment
     # between boot slot and rootfs.  It's not safe to update in this case
     mender-tegra-verify-boot-rootfs-slot-alignment || exit 1
+    if [ -e /var/volatile/mender-tegra-boot-slot-mismatch-install-disabled ]; then
+        echo "Disabling mender -install since a boot slot mismatch was detected."
+        echo "please reboot to realign boot slots"
+        exit 1
+    fi
 fi
 
 # Call the base mender executable, renamed

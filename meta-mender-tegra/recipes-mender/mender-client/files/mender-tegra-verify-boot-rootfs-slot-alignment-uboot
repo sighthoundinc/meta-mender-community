@@ -47,6 +47,8 @@ if [ $mender_boot_slot -ne $nvbootctrl_slot ]; then
     echo "Disabling mender-client systemd service to prevent any more updates"
     systemctl stop mender-client
 
+    # Create a marker file to prevent mender-install from running
+    touch /var/volatile/mender-tegra-boot-slot-mismatch-install-disabled
     echo "Reboot the device to set the active slot before proceeding for a mender -install or mender -commit"
     exit 1
 else
