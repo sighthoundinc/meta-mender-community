@@ -3,7 +3,7 @@ Description=Automatic Mender Commit Service
 After=mender-client.service 
 
 [Service]
-ExecStart=/etc/mender/mender-client-commit.sh
+ExecStart=/usr/bin/mender-client-commit.sh
 Type=oneshot
 StandardOutput=journal+console
 

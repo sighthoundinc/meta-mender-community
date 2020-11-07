@@ -3,12 +3,13 @@
 echo "Starting mender wrapper"
 
 # Did the user specify standalone install mode?
-echo $@ | grep ' install \| -install ' > /dev/null
+echo " $@" | grep ' install \| -install ' > /dev/null
 if [ $? -eq 0 ]; then
+    echo "Detected install arg for standalone install mode"
     install_arg=true
     # Exit with failure and error message if we don't have alignment
     # between boot slot and rootfs.  It's not safe to update in this case
-    /etc/mender/verify-boot-rootfs-slot-alignment-uboot || exit 1
+    mender-tegra-verify-boot-rootfs-slot-alignment || exit 1
 fi
 
 # Call the base mender executable, renamed
@@ -17,6 +18,7 @@ mender_override $@
 rc=$?
 if [ $rc -eq 0 ]; then
     if [ "$install_arg" = true ]; then
+        echo "Adding marker file to show standalone install was successful"
         # Add a marker to show update was successful, for auto-commit script
         touch /var/lib/mender/mender-install-success
     fi
