@@ -1,0 +1,5 @@
+#!/bin/sh
+nvbootctrl_slot=`nvbootctrl get-current-slot`
+echo "Current boot slot is ${nvbootctrl_slot}"
+echo "Boot slot misalignment is not possible on cboot based tegra platforms"
+exit 0

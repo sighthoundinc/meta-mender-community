@@ -1,6 +1,6 @@
 #!/bin/sh
 
-/etc/mender/verify-boot-rootfs-slot-alignment-uboot || exit 0
+/etc/mender/verify-boot-rootfs-slot-alignment || exit 0
 
 if [ -f /var/lib/mender/mender-install-success ]; then
     /usr/bin/mender -commit
