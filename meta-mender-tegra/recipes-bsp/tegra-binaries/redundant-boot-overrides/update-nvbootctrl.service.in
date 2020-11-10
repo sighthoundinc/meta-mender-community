@@ -1,0 +1,12 @@
+[Unit]
+Description=Update bootloader on successful boot
+Wants=mender-client.service
+After=mender-client.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@SBINDIR@/update-nvbootctrl
+
+[Install]
+WantedBy=multi-user.target
