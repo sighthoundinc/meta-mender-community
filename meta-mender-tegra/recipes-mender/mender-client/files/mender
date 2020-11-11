@@ -1,0 +1,30 @@
+#!/bin/sh
+
+echo "Starting mender wrapper"
+
+# Did the user specify standalone install mode?
+echo " $@" | grep ' install \| -install ' > /dev/null
+if [ $? -eq 0 ]; then
+    echo "Detected install arg for standalone install mode"
+    install_arg=true
+    # Exit with failure and error message if we don't have alignment
+    # between boot slot and rootfs.  It's not safe to update in this case
+    mender-tegra-verify-boot-rootfs-slot-alignment || exit 1
+    if [ -e /var/volatile/mender-tegra-boot-slot-mismatch-install-disabled ]; then
+        echo "Disabling mender -install since a boot slot mismatch was detected."
+        echo "please reboot to realign boot slots"
+        exit 1
+    fi
+fi
+
+# Call the base mender executable, renamed
+mender_override $@
+
+rc=$?
+if [ $rc -eq 0 ]; then
+    if [ "$install_arg" = true ]; then
+        echo "Adding marker file to show standalone install was successful"
+        # Add a marker to show update was successful, for auto-commit script
+        touch /var/lib/mender/mender-install-success
+    fi
+fi

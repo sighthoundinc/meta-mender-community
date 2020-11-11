@@ -1,0 +1,11 @@
+[Unit]
+Description=Automatic Mender Commit Service
+After=mender-client.service 
+
+[Service]
+ExecStart=/usr/bin/mender-client-commit.sh
+Type=oneshot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
