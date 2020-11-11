@@ -2,8 +2,10 @@
 NVBC=@SBINDIR@/nvbootctrl
 curslot=$($NVBC get-current-slot)
 if [ -n "$curslot" ]; then
-    if $NVBC set-active-boot-slot $curslot && $NVBC mark-boot-successful; then
-	exit 0
+    if [ ! -f /var/lib/mender/dont-mark-next-boot-successful ]; then	    
+        if $NVBC set-active-boot-slot $curslot && $NVBC mark-boot-successful; then
+	    exit 0
+        fi
     fi
 fi
 echo "ERR: could not update NV boot slots" >&2
