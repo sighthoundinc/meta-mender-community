@@ -10,10 +10,10 @@ import platform
 
 class MenderStandaloneTests:
     DEFAULT_USER = 'root'
-    DEFAULT_BOOT_METHOD = 'cboot'
     args = None
     connection = None
     argparser = None
+    count = 0
     
     def get_parser(self):
         if self.argparser is None:
@@ -22,7 +22,7 @@ class MenderStandaloneTests:
             '''
             argparser = argparse.ArgumentParser(prog='mender_tegra_tests.py',
                                                 usage='%(prog)s [options]',
-                                                description='Provisions Boulder AI devices')
+                                                description='Script to test mender install and rollback extensively')
             argparser.add_argument('-d',
                                    '--device',
                                    help='The IP address or name of the device')
@@ -42,11 +42,7 @@ class MenderStandaloneTests:
             argparser.add_argument('-i',
                                    '--install',
                                    help='The mender install argument to use with standalone install' +
-                                        ' (http://mylocalserver:8000/path/to/mender/file')
-            argparser.add_argument('-b',
-                                   '--boot_method',
-                                   help='Boot Method: uboot or cboot (default is cboot)')
- 
+                                        ' (http://mylocalserver:8000/path/to/mender/file') 
             self.argparser = argparser 
         return self.argparser
 
@@ -58,9 +54,6 @@ class MenderStandaloneTests:
             if self.args.user is None:
                 print("No user specified, using {}".format(self.DEFAULT_USER))
                 self.args.user=self.DEFAULT_USER
-            if self.args.boot_method is None:
-                print("No boot method specified, using {}".format(self.DEFAULT_BOOT_METHOD))
-                self.args.boot_method=self.DEFAULT_BOOT_METHOD
         return self.args
 
     def get_connection(self):
@@ -140,6 +133,10 @@ class MenderStandaloneTests:
         conn.run("mkdir -p /var/lib/mender")
         conn.run("touch /var/lib/mender/dont-mark-next-boot-successful")
 
+    def remove_sentinel_file(self):
+        conn = self.get_connection()
+        conn.run("rm /var/lib/mender/dont-mark-next-boot-successful")
+
     def mender_commit(self):
         self.get_connection().run("mender -commit")
 
@@ -172,57 +169,95 @@ class MenderStandaloneTests:
         else:
             raise RuntimeError("Cannot Identify Rootfs Partition Slot")
 
+    def verify_slot_change_across_reboots(self):
+        prev_boot_slot = self.nvbootctrl_current_slot()
+        self.reboot()
+        boot_slot = self.nvbootctrl_current_slot()
+        if boot_slot != prev_boot_slot:
+           raise RuntimeError("Boot slot changed from {} to {} across reboots".format(prev_boot_slot,boot_slot))
 
-    def do_single_mender_update(self):
+    def verify_slot_change_across_mender_update(self):
+        prev_boot_slot = self.nvbootctrl_current_slot()
+        self.reboot()
+        boot_slot = self.nvbootctrl_current_slot()
+        if boot_slot == prev_boot_slot:
+           raise RuntimeError("Boot slot not changed from {} to {} after mender update reboot".format(prev_boot_slot,boot_slot))
+
+    def do_single_mender_update(self, rollback_flag):
         # Connecting to the device
         self.wait_for_device()
         # mender install 
         self.mender_install()
-        # Make sure the sentinel file is present before reboot
-        self.add_sentinel_file()
+        # Make sure the sentinel file is not present before reboot for successful boot cases.
+        # sentinel file required for rollback cases
+        if rollback_flag:
+            self.add_sentinel_file()
+        else:
+            self.remove_sentinel_file()
+
         # Check Partition Mismatch
         self.check_partition_mismatch()
-        # Get current boot slot after mender update and before reboot
-        prev_boot_slot = self.nvbootctrl_current_slot()
-        # reboot the device
-        self.reboot()
-        # Getting current_boot_slot after reboot
-        current_boot_slot = self.nvbootctrl_current_slot()
-        # Check if update was successful after reboot
-        if prev_boot_slot == current_boot_slot:
-            raise RuntimeError("Mender Install successful but slot change not reflected after reboot")
-        # mender commit (has no effect for cboot)
-        if self.get_args().boot_method == 'cboot':
-            self.mender_commit()
-        
-        return current_boot_slot 
+        # Check slot changed after a mender update followed by reboot.
+        self.verify_slot_change_across_mender_update()
 
+        # rollback_flag is set true to replicate rollback case, false to replicate successful mender update case.
+        # Mender commit is redundant in case of cboot(no harm in commiting or not), but we need to make sure we don't mender commit when testing rollback case for uboot.
+        # Since that would lead to partition mismatch.
+        # In conclusion for uboot, mender commit is required for a successful mender update and not required to test the rollback case.
+        if not rollback_flag:
+            self.mender_commit()
 
     def check_rollback(self):
-        print("****************************************")
-        print("Starting test case")
-        boot_slot = self.do_single_mender_update()
+        boot_slot = self.nvbootctrl_current_slot()
+
+        # nvidia gives 7 retries before switching boot partition
         for i in range(7):
+            print(f'Starting reboot {i} to test rollback case')
             # Check Partition Mismatch
             self.check_partition_mismatch()
             # check the current boot_slot
             if boot_slot != self.nvbootctrl_current_slot():
-                raise RuntimeError("Mender Rollback occurred earlier than expected")
+                self.count += 1 
             self.reboot()
         # Device expected to rollback here
         if boot_slot != self.nvbootctrl_current_slot():
             print("Success: Rollback after 7 reboots")
         else:
             raise RuntimeError("ERROR: No rollback after 7 reboots")
+        self.remove_sentinel_file()
 
     def do_test(self):
-        while 1:
-            self.check_rollback()
+        # Passing true parameter to replicate rollback case
+        self.do_single_mender_update(True)
+        self.check_rollback()
+        self.do_single_mender_update(False)
+        # Rebooting 16 times to make sure it stays in the correct parttion and does not rollback
+        for loop in range(16):
+            print(f'Starting reboot {loop} after successful mender update')
+            self.check_partition_mismatch()
+            self.verify_slot_change_across_reboots()
 
-
+    def do_mender_torture(self):
+        # Successive mender updates 20 times.
+        for i in range(20):
+            self.do_single_mender_update(False)
+        # Basic test case
+        for loop in range(20):
+            self.do_test()
+        print(f'Number of times Rollback happened earlier that expected = {self.count}')
+  
+    def do_reboot_torture(self):
+        """
+        Do 100 reboots, making sure boot slot doesn't change and partition mismatch does not occur.
+        """
+        for i in range (100):
+            print("Starting plain reboot {}".format(i))
+            self.check_partition_mismatch()
+            self.verify_slot_change_across_reboots()
 
 if __name__ == '__main__':
     test = MenderStandaloneTests()
-    test.do_test()
+    test.do_mender_torture()
+    test.do_reboot_torture()
 
 
